@@ -44,6 +44,7 @@ export {
   toInlineDataPart,
   toStoredDataPart,
   transformDataParts,
+  tryParseBase64,
 } from "./common.js";
 
 export { transformBlobs } from "./file-system/blob-transform.js";

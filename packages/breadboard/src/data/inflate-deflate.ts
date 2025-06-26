@@ -16,6 +16,7 @@ import {
   isInlineData,
   isStoredData,
   transformDataParts,
+  tryParseBase64,
 } from "./common.js";
 import {
   DataDeflator,
@@ -141,6 +142,13 @@ export const deflateData = async (deflator: DataDeflator, data: unknown) => {
         r.blob()
       );
       return await deflator.store(blob);
+    }
+    if (isStoredData(value) && value.storedData.handle.startsWith("data:")) {
+      // The data is "stored" inside the handle.
+      const data = tryParseBase64(value.storedData.handle);
+      if (data) {
+        return await deflator.store(await asBlob(data));
+      }
     }
     return value;
   });

@@ -40,6 +40,7 @@ import {
   truncateValueForUtf8,
 } from "./utils.js";
 import type { GoogleDriveClient } from "../google-drive-client.js";
+import { asBlob, tryParseBase64 } from "@google-labs/breadboard/data";
 
 const PROTOCOL = "drive:";
 
@@ -800,39 +801,56 @@ class DriveOperations {
   async copyDriveFile(
     data: StoredDataCapabilityPart
   ): Promise<Outcome<StoredDataCapabilityPart>> {
+    const uploadBlob = async (
+      blob: Blob,
+      mimeType: string
+    ): Promise<StoredDataCapabilityPart> => {
+      const accessToken = await getAccessToken(this.vendor);
+      const api = new Files({ kind: "bearer", token: accessToken! });
+      response = await retryableFetch(
+        api.makeUploadRequest(undefined, blob, mimeType)
+      );
+      const copiedFile = (await response.json()) as DriveFile;
+      return {
+        storedData: {
+          handle: `${PROTOCOL}/${copiedFile.id}`,
+          mimeType,
+          contentHash: data.storedData.contentHash,
+          contentLength: blob.size,
+        },
+      };
+    };
+
     const sourceHandle = data.storedData.handle;
+    if (sourceHandle.startsWith("data:")) {
+      // The data is "stored" inside the handle.
+      const data = tryParseBase64(sourceHandle);
+      if (data) {
+        return uploadBlob(await asBlob(data), data.inlineData.mimeType);
+      }
+    }
     if (!sourceHandle.startsWith(PROTOCOL)) {
       return data;
     }
     const fileId = getFileId(sourceHandle);
     let response = await this.#googleDriveClient.copy(fileId);
-    const result: StoredDataCapabilityPart = {
-      storedData: {
-        handle: "",
-        mimeType: data.storedData.mimeType,
-        contentHash: data.storedData.contentHash,
-        contentLength: data.storedData.contentLength,
-      },
-    };
     if (!response.ok) {
       return err(response.statusText);
     }
     // This file wasn't possible to copy directly hence now the contend needs to be uploaded.
     if (!response.url.endsWith("/copy")) {
-      const accessToken = await getAccessToken(this.vendor);
-      const api = new Files({ kind: "bearer", token: accessToken! });
-      response = await retryableFetch(
-        api.makeUploadRequest(
-          undefined,
-          await response.blob(),
-          data.storedData.mimeType
-        )
-      );
+      return await uploadBlob(await response.blob(), data.storedData.mimeType);
     }
     const copiedFile = (await response.json()) as DriveFile;
-    result.storedData.handle = `${PROTOCOL}/${copiedFile.id}`;
-    result.data = data.data;
-    return result;
+    return {
+      storedData: {
+        handle: `${PROTOCOL}/${copiedFile.id}`,
+        mimeType: data.storedData.mimeType,
+        contentHash: data.storedData.contentHash,
+        contentLength: data.storedData.contentLength,
+      },
+      data: data.data,
+    };
   }
 
   async writeRunResults(results: RunResults): Promise<{ id: string }> {

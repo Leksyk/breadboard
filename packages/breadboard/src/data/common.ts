@@ -112,6 +112,31 @@ export const isDataCapability = (value: unknown): value is DataCapability => {
   return false;
 };
 
+export const tryParseBase64 = (
+  data: string
+): InlineDataCapabilityPart | undefined => {
+  const prefix = "data:";
+  if (!data.startsWith(prefix)) {
+    return undefined;
+  }
+  data = data.substring(prefix.length);
+
+  const parts = data.split(";", 2);
+  const mimeType = parts[0];
+  data = parts[1];
+  const base64Prefix = "base64,";
+  if (data.startsWith(base64Prefix)) {
+    data = data.substring(base64Prefix.length);
+  }
+
+  return {
+    inlineData: {
+      mimeType,
+      data,
+    },
+  };
+};
+
 export const asBlob = async (
   part: InlineDataCapabilityPart | StoredDataCapabilityPart | Chunk
 ) => {
